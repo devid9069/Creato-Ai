@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Copy of Creato AI - Advanced Content Studio",
+  "description": "A unified, production-level AI Content Creation System for generating reels, long videos, podcasts, and news with realistic voiceovers, AI images, and SEO optimization.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
