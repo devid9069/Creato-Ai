@@ -4,26 +4,33 @@ import { StudioResult, StudioConfig, Language, ContentType, Gender, ScriptCatego
 import { VOICES } from "../constants";
 
 /**
- * Enhanced retry logic specifically designed to handle 429 Resource Exhausted errors.
+ * Enhanced retry logic with specific handling for Netlify/Production environments.
  */
-async function retry<T>(fn: () => Promise<T>, retries = 3, initialDelay = 2000): Promise<T> {
+async function retry<T>(fn: () => Promise<T>, retries = 3, initialDelay = 3000): Promise<T> {
   let currentDelay = initialDelay;
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (error: any) {
-      const isRateLimit = error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED' || JSON.stringify(error).includes('429');
+      const errorMsg = error?.message || JSON.stringify(error);
+      const isRateLimit = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED');
+      const isAuthError = errorMsg.includes('403') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('not found');
       
+      if (isAuthError) {
+        throw new Error("API Key issue: Please check your Netlify Environment Variables. Make sure API_KEY is set.");
+      }
+
       if (i === retries) throw error;
       
-      const waitTime = isRateLimit ? currentDelay * 2 : currentDelay;
-      console.warn(`Attempt ${i + 1} failed. Retrying in ${waitTime}ms...`, error);
+      // Increase delay significantly for rate limits in production
+      const waitTime = isRateLimit ? currentDelay * 3 : currentDelay;
+      console.warn(`Production attempt ${i + 1} failed. Retrying in ${waitTime}ms...`, errorMsg);
       
       await new Promise(resolve => setTimeout(resolve, waitTime));
       currentDelay *= 2; 
     }
   }
-  throw new Error("Retry failed after maximum attempts");
+  throw new Error("Production process timed out after retries.");
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -33,8 +40,12 @@ export async function generateContent(
   config: StudioConfig,
   onProgress?: (percent: number) => void
 ): Promise<StudioResult> {
-  // Initialize inside the call to ensure the latest API key is used
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === "undefined") {
+    throw new Error("API_KEY is missing. Please add it to your Netlify Dashboard under Site Settings > Environment Variables.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = 'gemini-3-flash-preview';
   
   if (onProgress) onProgress(5);
@@ -47,14 +58,11 @@ export async function generateContent(
   const targetWordCount = Math.round(totalSeconds * multiplier);
 
   const systemInstruction = `
-    You are Creato AI, a high-end production studio.
-    Generate a complete content package for: ${config.contentType} in category: ${config.scriptCategory}, language: ${config.language}.
-    
-    DURATION: Exactly ${config.durationMinutes}m ${config.durationSeconds}s (~${targetWordCount} words).
-    VISUALS: Ratio ${config.aspectRatio}. 
-    THUMBNAIL: A "Hero Shot" for topic: "${prompt}". 
-    
-    RESPONSE FORMAT: JSON.
+    You are Creato AI Studio. Generate JSON content for: ${config.contentType}.
+    Category: ${config.scriptCategory}. Language: ${config.language}.
+    Duration: ${config.durationMinutes}m ${config.durationSeconds}s.
+    Aspect Ratio: ${config.aspectRatio}.
+    IMPORTANT: Provide exactly 4 detailed imagePrompts and 1 thumbnailPrompt tailored to the topic: "${prompt}".
   `;
 
   const responseSchema = {
@@ -74,7 +82,7 @@ export async function generateContent(
 
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
     model,
-    contents: `Topic: ${prompt}\nRatio: ${config.aspectRatio}`,
+    contents: `Production Topic: ${prompt}. Word count target: ${targetWordCount}.`,
     config: {
       systemInstruction,
       responseMimeType: "application/json",
@@ -82,36 +90,40 @@ export async function generateContent(
     }
   }));
 
-  if (onProgress) onProgress(20);
+  if (onProgress) onProgress(25);
   const data = JSON.parse(response.text || '{}');
 
   const images: string[] = [];
   let isQuotaExhausted = false;
 
-  for (let i = 0; i < (data.imagePrompts?.length || 0); i++) {
+  // Generate images one by one with a healthy gap to avoid 429
+  for (let i = 0; i < 4; i++) {
     if (isQuotaExhausted) {
-      images.push(`https://picsum.photos/seed/fallback_${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
+      images.push(`https://picsum.photos/seed/${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
     } else {
       try {
-        if (i > 0) await sleep(1500); 
-        const img = await generateStudioImage(data.imagePrompts[i], config.aspectRatio);
+        await sleep(2500); // 2.5s gap between image requests
+        const imgPrompt = data.imagePrompts?.[i] || `Cinematic scene for ${data.title}`;
+        const img = await generateStudioImage(imgPrompt, config.aspectRatio);
         images.push(img);
       } catch (err: any) {
-        images.push(`https://picsum.photos/seed/err_${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
-        if (err?.message?.includes('429')) isQuotaExhausted = true;
+        console.error("Image gen failed", err);
+        images.push(`https://picsum.photos/seed/err${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
+        if (err.message?.includes('429')) isQuotaExhausted = true;
       }
     }
-    if (onProgress) onProgress(Math.min(20 + (i + 1) * 15, 80));
+    if (onProgress) onProgress(25 + (i + 1) * 15);
   }
 
   let thumbnail = '';
   try {
-    await sleep(2000);
-    thumbnail = await generateStudioImage(data.thumbnailPrompt || `Hero image for ${prompt}`, config.aspectRatio);
+    await sleep(3000); // Larger gap for thumbnail
+    thumbnail = await generateStudioImage(data.thumbnailPrompt || `Hero shot for ${prompt}`, config.aspectRatio);
   } catch (err) {
-    thumbnail = `https://picsum.photos/seed/thumb_err/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
+    thumbnail = `https://picsum.photos/seed/thumb/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
   }
 
+  if (onProgress) onProgress(90);
   const audioData = await generateStudioAudio(data.script || "", config);
   if (onProgress) onProgress(100);
 
@@ -127,19 +139,20 @@ export async function generateContent(
 }
 
 export async function generateStudioImage(prompt: string, aspectRatio: AspectRatio): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
+  const apiKey = process.env.API_KEY;
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
   const model = 'gemini-2.5-flash-image';
 
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
     model,
-    contents: { parts: [{ text: `${prompt}. Cinematic, high detail, realistic, ${aspectRatio} aspect ratio.` }] },
+    contents: { parts: [{ text: `${prompt}. High quality, cinematic, ultra-realistic, ${aspectRatio} aspect ratio.` }] },
     config: { imageConfig: { aspectRatio } }
-  }), 2, 3000);
+  }), 2, 4000);
 
   for (const part of response.candidates?.[0]?.content?.parts || []) {
     if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
   }
-  throw new Error("No image data");
+  throw new Error("Asset generation failed.");
 }
 
 function createWavHeader(dataLength: number, sampleRate: number): Uint8Array {
@@ -162,15 +175,14 @@ function createWavHeader(dataLength: number, sampleRate: number): Uint8Array {
 }
 
 async function generateStudioAudio(script: string, config: StudioConfig): Promise<{ blob: Blob; url: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
+  const apiKey = process.env.API_KEY;
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
   const model = 'gemini-2.5-flash-preview-tts';
   const selectedVoice = VOICES.find(v => v.id === config.voiceId) || VOICES[0];
 
-  const ttsText = `Performance: ${config.tone}. Speed: ${config.speed}. Script: ${script}`;
-
   let audioParams: any = {
     model,
-    contents: [{ parts: [{ text: ttsText }] }],
+    contents: [{ parts: [{ text: `Tone: ${config.tone}. Script: ${script}` }] }],
     config: {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
@@ -182,7 +194,7 @@ async function generateStudioAudio(script: string, config: StudioConfig): Promis
   };
 
   try {
-    const response: GenerateContentResponse = await retry(() => ai.models.generateContent(audioParams));
+    const response: GenerateContentResponse = await retry(() => ai.models.generateContent(audioParams), 1, 5000);
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const binaryString = atob(base64Audio);
@@ -198,7 +210,7 @@ async function generateStudioAudio(script: string, config: StudioConfig): Promis
       return { blob, url: URL.createObjectURL(blob) };
     }
   } catch (err) {
-    console.error("Audio generation failed:", err);
+    console.error("Audio Master Export Failed:", err);
   }
   return { blob: new Blob(), url: '' };
 }

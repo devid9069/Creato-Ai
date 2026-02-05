@@ -48,7 +48,6 @@ const App: React.FC = () => {
     localStorage.setItem('creato_settings', JSON.stringify(config));
   }, [config]);
 
-  // Handle duration and aspect ratio constraints based on ContentType
   useEffect(() => {
     const isReel = config.contentType === ContentType.REEL;
     let mins = config.durationMinutes;
@@ -68,7 +67,6 @@ const App: React.FC = () => {
     }
   }, [config.contentType, config.durationMinutes, config.durationSeconds]);
 
-  // Sync default aspect ratio when content type changes
   const handleContentTypeChange = (type: ContentType) => {
     setConfig(prev => ({ 
       ...prev, 
@@ -121,7 +119,8 @@ const App: React.FC = () => {
       await saveHistoryToDB(updatedHistory);
     } catch (error: any) {
       console.error("Generation failed", error);
-      alert("Production failed. Please try again.");
+      const msg = error.message || "Production failed due to API limits or connection issues.";
+      alert(`STUDIO ERROR: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -132,7 +131,7 @@ const App: React.FC = () => {
     const item = history.find(h => h.id === (result as HistoryItem).id);
     const basePrompt = item?.prompt || prompt;
     const orientation = result.aspectRatio === AspectRatio.VERTICAL ? "Vertical 9:16 layout" : "Horizontal 16:9 layout";
-    const regenPrompt = `Realistic cinematic video clip related to "${basePrompt}". Scene description: "${result.title}". Category: ${config.scriptCategory}. Format: ${orientation}. High quality.`;
+    const regenPrompt = `Cinematic clip related to "${basePrompt}". Scene: "${result.title}". Category: ${config.scriptCategory}. ${orientation}.`;
     try {
       const newImage = await generateStudioImage(regenPrompt, result.aspectRatio);
       const newImages = [...result.images];
@@ -151,8 +150,8 @@ const App: React.FC = () => {
     if (!result) return;
     const item = history.find(h => h.id === (result as HistoryItem).id);
     const basePrompt = item?.prompt || prompt;
-    const orientation = result.aspectRatio === AspectRatio.VERTICAL ? "Vertical 9:16 Portrait" : "Horizontal 16:9 Landscape";
-    const regenPrompt = `High-CTR English-language thumbnail specifically for the topic "${basePrompt}". Title of video: "${result.title}". Category: ${config.scriptCategory}. Orientation: ${orientation}. Eye-catching and relevant.`;
+    const orientation = result.aspectRatio === AspectRatio.VERTICAL ? "Vertical 9:16" : "Horizontal 16:9";
+    const regenPrompt = `Eye-catching thumbnail for "${basePrompt}". Title: "${result.title}". ${orientation}.`;
     try {
       const newThumbnail = await generateStudioImage(regenPrompt, result.aspectRatio);
       const updatedResult = { ...result, thumbnail: newThumbnail };
@@ -166,25 +165,25 @@ const App: React.FC = () => {
   };
 
   const clearHistory = async () => {
-    if (confirm("Are you sure you want to delete all saved projects?")) {
+    if (confirm("Delete all projects?")) {
       await clearHistoryDB();
       setHistory([]);
     }
   };
 
   const CONTENT_TYPES = [
-    { type: ContentType.REEL, icon: '📱', desc: '9:16 Shorts (Max 60s)' },
-    { type: ContentType.LONG, icon: '🎬', desc: '16:9 Video (5s-5m)' },
-    { type: ContentType.PODCAST, icon: '🎙️', desc: 'Podcast (5s-5m)' },
-    { type: ContentType.NEWS, icon: '📰', desc: 'News (5s-5m)' }
+    { type: ContentType.REEL, icon: '📱', desc: '9:16 Shorts' },
+    { type: ContentType.LONG, icon: '🎬', desc: '16:9 Video' },
+    { type: ContentType.PODCAST, icon: '🎙️', desc: 'Podcast' },
+    { type: ContentType.NEWS, icon: '📰', desc: 'News' }
   ];
 
   const getProgressLabel = (p: number) => {
-    if (p < 25) return "Analyzing Precision Timing...";
-    if (p < 35) return "Calculating Word Counts...";
-    if (p < 75) return `Generating Visual Assets...`;
-    if (p < 95) return "Timing Voiceover Cadence...";
-    return "Exporting MP3 Master...";
+    if (p < 25) return "Initializing AI Studio...";
+    if (p < 30) return "Writing Professional Script...";
+    if (p < 85) return `Generating Visual Assets (${p}%)...`;
+    if (p < 95) return "Mastering Audio Voiceover...";
+    return "Exporting Final Media Pack...";
   };
 
   const isReel = config.contentType === ContentType.REEL;
@@ -215,12 +214,11 @@ const App: React.FC = () => {
               <div className="max-w-5xl mx-auto pt-12 px-4 space-y-10 pb-20">
                 <div className="text-center space-y-3">
                   <h1 className="text-5xl md:text-6xl font-outfit font-black tracking-tight leading-[1.1]">
-                    Create <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-400">Gen-Z Content</span>
+                    Professional <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-400">AI Content Studio</span>
                   </h1>
-                  <p className="text-gray-500 text-lg font-medium">Unified Production Studio with Precision Timing.</p>
+                  <p className="text-gray-500 text-lg font-medium">Full production with precise timing and SEO.</p>
                 </div>
 
-                {/* Step 1: Format */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500 text-center">Step 1: Choose Format</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -244,7 +242,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Step 2: Category */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500 text-center">Step 2: Script Category</h3>
                   <div className="flex overflow-x-auto pb-4 gap-3 no-scrollbar snap-x">
@@ -264,10 +261,9 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Step 3: Target Duration */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500 text-center">
-                    Step 3: Target Duration {isReel ? '(Max 60s)' : '(5s to 5m)'}
+                    Step 3: Target Duration
                   </h3>
                   <div className="flex justify-center items-center gap-6">
                     <div className={`flex flex-col items-center gap-2 transition-opacity duration-300 ${isReel ? 'opacity-20 cursor-not-allowed' : 'opacity-100'}`}>
@@ -293,40 +289,10 @@ const App: React.FC = () => {
                       />
                     </div>
                   </div>
-                  {isReel && config.durationSeconds > 60 && <p className="text-center text-red-500 text-[10px] font-bold uppercase">Shorts are limited to 60 seconds.</p>}
-                  {!isReel && ((config.durationMinutes * 60) + config.durationSeconds) > 300 && <p className="text-center text-red-500 text-[10px] font-bold uppercase">Production cap is 5 minutes.</p>}
-                  {((config.durationMinutes * 60) + config.durationSeconds) < 5 && <p className="text-center text-yellow-500 text-[10px] font-bold uppercase">Production requires at least 5 seconds.</p>}
-                </div>
-
-                {/* Step 4: Visual Orientation */}
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500 text-center">Step 4: Visual Orientation</h3>
-                  <div className="flex justify-center gap-6">
-                    <button
-                      onClick={() => setConfig({ ...config, aspectRatio: AspectRatio.HORIZONTAL })}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all w-32 ${config.aspectRatio === AspectRatio.HORIZONTAL ? 'border-blue-500 bg-blue-600/10 shadow-lg shadow-blue-900/20' : 'border-gray-800 bg-gray-900/40 opacity-60 hover:opacity-100'}`}
-                    >
-                      <div className="w-12 h-8 border-2 border-current rounded bg-current/20"></div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Horizontal</span>
-                      <span className="text-[8px] text-gray-500 font-medium">16:9</span>
-                    </button>
-                    <button
-                      onClick={() => setConfig({ ...config, aspectRatio: AspectRatio.VERTICAL })}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all w-32 ${config.aspectRatio === AspectRatio.VERTICAL ? 'border-blue-500 bg-blue-600/10 shadow-lg shadow-blue-900/20' : 'border-gray-800 bg-gray-900/40 opacity-60 hover:opacity-100'}`}
-                    >
-                      <div className="w-8 h-12 border-2 border-current rounded bg-current/20"></div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest">Vertical</span>
-                      <span className="text-[8px] text-gray-500 font-medium">9:16</span>
-                    </button>
-                  </div>
                 </div>
 
                 <div className="bg-gray-900/40 border border-gray-800 rounded-3xl p-6 md:p-8 backdrop-blur-sm shadow-2xl space-y-8">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:grid-cols-5">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-widest font-bold text-gray-500 ml-1">Language</label>
-                      <select value={config.language} onChange={(e) => setConfig({ ...config, language: e.target.value as Language })} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none"><option value={Language.ENGLISH}>English</option><option value={Language.HINDI}>Hindi</option></select>
-                    </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] uppercase tracking-widest font-bold text-gray-500 ml-1">Voice</label>
                       <select value={config.voiceId} onChange={(e) => setConfig({ ...config, voiceId: e.target.value })} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none">{VOICES.map(v => <option key={v.id} value={v.id}>{v.name} ({v.gender})</option>)}</select>
@@ -335,26 +301,18 @@ const App: React.FC = () => {
                       <label className="text-[10px] uppercase tracking-widest font-bold text-gray-500 ml-1">Tone</label>
                       <select value={config.tone} onChange={(e) => setConfig({ ...config, tone: e.target.value as Tone })} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none">{TONES.map(t => <option key={t} value={t}>{t}</option>)}</select>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-widest font-bold text-gray-500 ml-1">Speed</label>
-                      <select value={config.speed} onChange={(e) => setConfig({ ...config, speed: e.target.value as Speed })} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-sm outline-none">{SPEEDS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-widest font-bold text-gray-500 ml-1">Volume {config.volume.toFixed(1)}x</label>
-                      <input type="range" min="0.5" max="2.0" step="0.1" value={config.volume} onChange={(e) => setConfig({ ...config, volume: parseFloat(e.target.value) })} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500" />
-                    </div>
                   </div>
 
                   <div className="relative group">
-                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={`Describe your content idea...`} className="w-full h-40 bg-gray-950/50 border border-gray-700 rounded-2xl p-6 text-lg outline-none placeholder:text-gray-600 resize-none" />
+                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={`Describe your content idea in detail...`} className="w-full h-40 bg-gray-950/50 border border-gray-700 rounded-2xl p-6 text-lg outline-none placeholder:text-gray-600 resize-none" />
                     <div className="absolute bottom-4 right-4 flex items-center gap-3">
                       <VoiceInput onTranscript={(text) => setPrompt(prev => prev ? prev + ' ' + text : text)} isListening={isListening} setIsListening={setIsListening} />
                       <button 
                         onClick={handleGenerate} 
-                        disabled={!prompt.trim() || loading || ((config.durationMinutes * 60) + config.durationSeconds) < 5} 
+                        disabled={!prompt.trim() || loading} 
                         className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-8 py-4 rounded-full transition-all flex items-center gap-2 group/btn shadow-xl shadow-blue-900/20"
                       >
-                        Produce Now
+                        Start Production
                       </button>
                     </div>
                   </div>
@@ -369,7 +327,7 @@ const App: React.FC = () => {
                   <div className="absolute inset-0 flex items-center justify-center font-outfit font-black text-xl text-blue-500">{progress}%</div>
                 </div>
                 <div className="space-y-4 max-w-md w-full">
-                  <h3 className="text-2xl font-outfit font-bold uppercase tracking-wider">Studio Rendering...</h3>
+                  <h3 className="text-2xl font-outfit font-bold uppercase tracking-wider">Production in Progress...</h3>
                   <p className="text-gray-500 text-sm font-medium h-5">{getProgressLabel(progress)}</p>
                   <div className="w-full bg-gray-800 h-3 rounded-full overflow-hidden border border-gray-700 p-0.5 shadow-lg">
                     <div className="bg-gradient-to-r from-blue-600 to-purple-600 h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
@@ -383,7 +341,7 @@ const App: React.FC = () => {
                 <div className="sticky top-[73px] z-40 bg-gray-950/80 backdrop-blur-lg border-b border-gray-800 p-4 mb-4 shadow-xl">
                   <div className="max-w-6xl mx-auto flex justify-between items-center px-4">
                     <button onClick={() => setResult(null)} className="flex items-center gap-2 text-gray-400 hover:text-white text-sm font-semibold transition-colors">New Production</button>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-xs px-4 py-2 rounded-lg font-bold transition-colors">Project Live</button>
+                    <button className="bg-blue-600 hover:bg-blue-700 text-xs px-4 py-2 rounded-lg font-bold transition-colors">Studio Ready</button>
                   </div>
                 </div>
                 <StudioOutput result={result} onRegenerateClip={handleRegenerateClip} onRegenerateThumbnail={handleRegenerateThumbnail} />
@@ -396,12 +354,12 @@ const App: React.FC = () => {
           <div className="max-w-6xl mx-auto pt-12 px-6 space-y-8 pb-20">
             <div className="flex justify-between items-end">
               <h2 className="text-4xl font-outfit font-black">Creation <span className="text-blue-500">History</span></h2>
-              <button onClick={clearHistory} className="text-red-400 hover:text-red-300 text-sm font-bold border border-red-500/30 px-4 py-2 rounded-xl transition-all">Clear All History</button>
+              <button onClick={clearHistory} className="text-red-400 hover:text-red-300 text-sm font-bold border border-red-500/30 px-4 py-2 rounded-xl transition-all">Clear All</button>
             </div>
             {history.length === 0 ? (
               <div className="bg-gray-900/20 border border-gray-800 rounded-3xl p-20 text-center space-y-4">
-                <p className="text-gray-600 text-xl font-medium">No projects found.</p>
-                <button onClick={() => setCurrentView('studio')} className="bg-blue-600 px-6 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-900/30">Start Your First Project</button>
+                <p className="text-gray-600 text-xl font-medium">History empty.</p>
+                <button onClick={() => setCurrentView('studio')} className="bg-blue-600 px-6 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-900/30">Start Project</button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -422,18 +380,9 @@ const App: React.FC = () => {
               <h2 className="text-4xl font-outfit font-black">Studio <span className="text-blue-500">Settings</span></h2>
             </div>
             <div className="bg-gray-900/40 border border-gray-800 rounded-3xl p-8 space-y-8 shadow-2xl">
-              <div className="space-y-6">
-                <div className="flex justify-between items-center border-b border-gray-800 pb-6">
-                  <div><h4 className="font-bold text-lg">Default Language</h4></div>
-                  <select value={config.language} onChange={(e) => setConfig({ ...config, language: e.target.value as Language })} className="bg-gray-800 border border-gray-700 px-4 py-2 rounded-xl text-sm outline-none"><option value={Language.ENGLISH}>English</option><option value={Language.HINDI}>Hindi</option></select>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div><h4 className="font-bold text-lg">Preferred Voice</h4></div>
-                  <select value={config.voiceId} onChange={(e) => setConfig({ ...config, voiceId: e.target.value })} className="bg-gray-800 border border-gray-700 px-4 py-2 rounded-xl text-sm outline-none">{VOICES.map(v => <option key={v.id} value={v.id}>{v.name} ({v.gender})</option>)}</select>
-                </div>
-              </div>
-              <div className="pt-8 border-t border-gray-800 text-center">
-                <button onClick={() => { setCurrentView('studio'); alert("Settings Updated!"); }} className="bg-white text-black font-bold px-10 py-3 rounded-xl transition-all shadow-xl hover:bg-gray-200">Save & Apply Changes</button>
+              <div className="space-y-6 text-center">
+                 <p className="text-gray-400">Settings are auto-saved to local storage.</p>
+                 <button onClick={() => setCurrentView('studio')} className="bg-white text-black font-bold px-10 py-3 rounded-xl transition-all shadow-xl hover:bg-gray-200">Return to Studio</button>
               </div>
             </div>
           </div>
@@ -444,7 +393,7 @@ const App: React.FC = () => {
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex flex-col items-center md:items-start gap-2">
              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-gradient-to-tr from-blue-600 to-purple-600 rounded-md flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <div className="w-6 h-6 bg-gradient-to-tr from-blue-600 to-purple-600 rounded-md flex items-center justify-center">
                    <span className="font-outfit font-black text-[10px] italic text-white">C</span>
                 </div>
                 <span className="font-outfit font-bold text-lg tracking-tight">Creato AI</span>
@@ -452,8 +401,7 @@ const App: React.FC = () => {
              <p className="text-gray-500 text-sm">Universal AI Production System</p>
           </div>
           <div className="text-center md:text-right">
-            <p className="text-gray-400 font-medium font-outfit">Made by <span className="text-white font-bold">Abhishek Sen</span></p>
-            <p className="text-gray-600 text-[10px] mt-1 uppercase tracking-widest">&copy; 2024 CREATO AI SYSTEMS. ALL RIGHTS RESERVED.</p>
+            <p className="text-gray-400 font-medium font-outfit">Built by <span className="text-white font-bold">Abhishek Sen</span></p>
           </div>
         </div>
       </footer>
