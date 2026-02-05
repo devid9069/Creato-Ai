@@ -54,9 +54,11 @@ export async function generateContent(
     The user has requested a script that lasts exactly ${config.durationMinutes} minutes and ${config.durationSeconds} seconds.
     Based on a ${config.speed} speaking pace, you MUST write a script that is approximately ${targetWordCount} words long.
 
-    STRICT VISUAL CONSTRAINT:
+    STRICT VISUAL & THUMBNAIL CONSTRAINT:
     The user has selected an Aspect Ratio of ${config.aspectRatio}.
-    - All image descriptions and visual cues MUST be optimized for ${config.aspectRatio === AspectRatio.VERTICAL ? 'Vertical (9:16) Portrait mode' : 'Horizontal (16:9) Landscape mode'}.
+    - All image descriptions (imagePrompts) AND the thumbnail (thumbnailPrompt) MUST be optimized for ${config.aspectRatio === AspectRatio.VERTICAL ? 'Vertical (9:16) Portrait mode' : 'Horizontal (16:9) Landscape mode'}.
+    - The THUMBNAIL must be a "Hero Shot" that directly visually represents the core question/topic: "${prompt}".
+    - Avoid generic thumbnails. If the topic is "How to bake", the thumbnail must show a chef or a cake in ${config.aspectRatio}.
 
     RESPONSE FORMAT: Return valid JSON.
   `;
@@ -121,7 +123,7 @@ export async function generateContent(
   } else {
     try {
       await sleep(2000); // Larger gap for the final asset
-      thumbnail = await generateStudioImage(data.thumbnailPrompt || "Cinematic title card", config.aspectRatio);
+      thumbnail = await generateStudioImage(data.thumbnailPrompt || `Cinematic hero image for ${prompt}`, config.aspectRatio);
     } catch (err) {
       thumbnail = `https://picsum.photos/seed/thumb_err_${Math.random()}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
     }
@@ -150,7 +152,7 @@ export async function generateStudioImage(prompt: string, aspectRatio: AspectRat
   // Use the enhanced retry for image generation
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
     model,
-    contents: { parts: [{ text: `${prompt}. Optimized for ${aspectRatio} aspect ratio. High detail cinematic style.` }] },
+    contents: { parts: [{ text: `${prompt}. Optimized for ${aspectRatio} aspect ratio. High detail cinematic style, ultra-realistic.` }] },
     config: { imageConfig: { aspectRatio } }
   }), 2, 3000); // 2 retries, 3s initial delay for images
 

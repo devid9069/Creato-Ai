@@ -129,8 +129,10 @@ const App: React.FC = () => {
 
   const handleRegenerateClip = async (index: number) => {
     if (!result) return;
+    const item = history.find(h => h.id === (result as HistoryItem).id);
+    const basePrompt = item?.prompt || prompt;
     const orientation = result.aspectRatio === AspectRatio.VERTICAL ? "Vertical 9:16 layout" : "Horizontal 16:9 layout";
-    const regenPrompt = `Realistic cinematic video clip for project "${result.title}". Category: ${config.scriptCategory}. Format: ${orientation}. High quality.`;
+    const regenPrompt = `Realistic cinematic video clip related to "${basePrompt}". Scene description: "${result.title}". Category: ${config.scriptCategory}. Format: ${orientation}. High quality.`;
     try {
       const newImage = await generateStudioImage(regenPrompt, result.aspectRatio);
       const newImages = [...result.images];
@@ -147,8 +149,10 @@ const App: React.FC = () => {
 
   const handleRegenerateThumbnail = async () => {
     if (!result) return;
+    const item = history.find(h => h.id === (result as HistoryItem).id);
+    const basePrompt = item?.prompt || prompt;
     const orientation = result.aspectRatio === AspectRatio.VERTICAL ? "Vertical 9:16 Portrait" : "Horizontal 16:9 Landscape";
-    const regenPrompt = `High-CTR English-language thumbnail for "${result.title}" in ${config.scriptCategory} niche. ${orientation}. Eye-catching.`;
+    const regenPrompt = `High-CTR English-language thumbnail specifically for the topic "${basePrompt}". Title of video: "${result.title}". Category: ${config.scriptCategory}. Orientation: ${orientation}. Eye-catching and relevant.`;
     try {
       const newThumbnail = await generateStudioImage(regenPrompt, result.aspectRatio);
       const updatedResult = { ...result, thumbnail: newThumbnail };
