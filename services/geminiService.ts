@@ -34,7 +34,7 @@ export async function generateContent(
   onProgress?: (percent: number) => void
 ): Promise<StudioResult> {
   // Initialize inside the call to ensure the latest API key is used
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
   const model = 'gemini-3-flash-preview';
   
   if (onProgress) onProgress(5);
@@ -127,7 +127,7 @@ export async function generateContent(
 }
 
 export async function generateStudioImage(prompt: string, aspectRatio: AspectRatio): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
   const model = 'gemini-2.5-flash-image';
 
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
@@ -162,7 +162,7 @@ function createWavHeader(dataLength: number, sampleRate: number): Uint8Array {
 }
 
 async function generateStudioAudio(script: string, config: StudioConfig): Promise<{ blob: Blob; url: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
   const model = 'gemini-2.5-flash-preview-tts';
   const selectedVoice = VOICES.find(v => v.id === config.voiceId) || VOICES[0];
 
