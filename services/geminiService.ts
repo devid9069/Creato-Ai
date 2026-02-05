@@ -3,8 +3,6 @@ import { GoogleGenAI, Type, Modality, GenerateContentResponse } from "@google/ge
 import { StudioResult, StudioConfig, Language, ContentType, Gender, ScriptCategory, Tone, Speed, AspectRatio } from "../types";
 import { VOICES } from "../constants";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 /**
  * Enhanced retry logic specifically designed to handle 429 Resource Exhausted errors.
  */
@@ -18,12 +16,11 @@ async function retry<T>(fn: () => Promise<T>, retries = 3, initialDelay = 2000):
       
       if (i === retries) throw error;
       
-      // If we are rate limited, wait significantly longer
       const waitTime = isRateLimit ? currentDelay * 2 : currentDelay;
       console.warn(`Attempt ${i + 1} failed. Retrying in ${waitTime}ms...`, error);
       
       await new Promise(resolve => setTimeout(resolve, waitTime));
-      currentDelay *= 2; // Exponential backoff
+      currentDelay *= 2; 
     }
   }
   throw new Error("Retry failed after maximum attempts");
@@ -36,7 +33,10 @@ export async function generateContent(
   config: StudioConfig,
   onProgress?: (percent: number) => void
 ): Promise<StudioResult> {
+  // Initialize inside the call to ensure the latest API key is used
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-3-flash-preview';
+  
   if (onProgress) onProgress(5);
 
   const totalSeconds = (config.durationMinutes * 60) + config.durationSeconds;
@@ -48,19 +48,13 @@ export async function generateContent(
 
   const systemInstruction = `
     You are Creato AI, a high-end production studio.
-    Generate a complete content package for the user-selected format: ${config.contentType} in the category: ${config.scriptCategory}, using the language: ${config.language}.
+    Generate a complete content package for: ${config.contentType} in category: ${config.scriptCategory}, language: ${config.language}.
     
-    STRICT DURATION CONSTRAINT:
-    The user has requested a script that lasts exactly ${config.durationMinutes} minutes and ${config.durationSeconds} seconds.
-    Based on a ${config.speed} speaking pace, you MUST write a script that is approximately ${targetWordCount} words long.
-
-    STRICT VISUAL & THUMBNAIL CONSTRAINT:
-    The user has selected an Aspect Ratio of ${config.aspectRatio}.
-    - All image descriptions (imagePrompts) AND the thumbnail (thumbnailPrompt) MUST be optimized for ${config.aspectRatio === AspectRatio.VERTICAL ? 'Vertical (9:16) Portrait mode' : 'Horizontal (16:9) Landscape mode'}.
-    - The THUMBNAIL must be a "Hero Shot" that directly visually represents the core question/topic: "${prompt}".
-    - Avoid generic thumbnails. If the topic is "How to bake", the thumbnail must show a chef or a cake in ${config.aspectRatio}.
-
-    RESPONSE FORMAT: Return valid JSON.
+    DURATION: Exactly ${config.durationMinutes}m ${config.durationSeconds}s (~${targetWordCount} words).
+    VISUALS: Ratio ${config.aspectRatio}. 
+    THUMBNAIL: A "Hero Shot" for topic: "${prompt}". 
+    
+    RESPONSE FORMAT: JSON.
   `;
 
   const responseSchema = {
@@ -80,7 +74,7 @@ export async function generateContent(
 
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
     model,
-    contents: `Topic: ${prompt}\nFormat: ${config.contentType}\nCategory: ${config.scriptCategory}\nWords: ${targetWordCount}\nRatio: ${config.aspectRatio}`,
+    contents: `Topic: ${prompt}\nRatio: ${config.aspectRatio}`,
     config: {
       systemInstruction,
       responseMimeType: "application/json",
@@ -92,47 +86,33 @@ export async function generateContent(
   const data = JSON.parse(response.text || '{}');
 
   const images: string[] = [];
-  let currentProgress = 20;
   let isQuotaExhausted = false;
 
-  // Process images sequentially with delays to respect RPM (Requests Per Minute)
   for (let i = 0; i < (data.imagePrompts?.length || 0); i++) {
     if (isQuotaExhausted) {
-      images.push(`https://picsum.photos/seed/fallback_${i}_${Math.random()}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
+      images.push(`https://picsum.photos/seed/fallback_${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
     } else {
       try {
-        // Wait a bit before each image request to stay under free tier limits
         if (i > 0) await sleep(1500); 
         const img = await generateStudioImage(data.imagePrompts[i], config.aspectRatio);
         images.push(img);
       } catch (err: any) {
-        console.error("Image prompt failed, using fallback", err);
-        images.push(`https://picsum.photos/seed/err_${i}_${Math.random()}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
-        // If we hit a hard 429, don't keep hammering the API for this batch
+        images.push(`https://picsum.photos/seed/err_${i}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`);
         if (err?.message?.includes('429')) isQuotaExhausted = true;
       }
     }
-    currentProgress += 12;
-    if (onProgress) onProgress(Math.min(currentProgress, 85));
+    if (onProgress) onProgress(Math.min(20 + (i + 1) * 15, 80));
   }
 
-  // Final thumbnail request
   let thumbnail = '';
-  if (isQuotaExhausted) {
-    thumbnail = `https://picsum.photos/seed/thumb_${Math.random()}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
-  } else {
-    try {
-      await sleep(2000); // Larger gap for the final asset
-      thumbnail = await generateStudioImage(data.thumbnailPrompt || `Cinematic hero image for ${prompt}`, config.aspectRatio);
-    } catch (err) {
-      thumbnail = `https://picsum.photos/seed/thumb_err_${Math.random()}/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
-    }
+  try {
+    await sleep(2000);
+    thumbnail = await generateStudioImage(data.thumbnailPrompt || `Hero image for ${prompt}`, config.aspectRatio);
+  } catch (err) {
+    thumbnail = `https://picsum.photos/seed/thumb_err/${config.aspectRatio === AspectRatio.VERTICAL ? '720/1280' : '1280/720'}`;
   }
-
-  if (onProgress) onProgress(90);
 
   const audioData = await generateStudioAudio(data.script || "", config);
-  
   if (onProgress) onProgress(100);
 
   return {
@@ -147,31 +127,28 @@ export async function generateContent(
 }
 
 export async function generateStudioImage(prompt: string, aspectRatio: AspectRatio): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-2.5-flash-image';
 
-  // Use the enhanced retry for image generation
   const response: GenerateContentResponse = await retry(() => ai.models.generateContent({
     model,
-    contents: { parts: [{ text: `${prompt}. Optimized for ${aspectRatio} aspect ratio. High detail cinematic style, ultra-realistic.` }] },
+    contents: { parts: [{ text: `${prompt}. Cinematic, high detail, realistic, ${aspectRatio} aspect ratio.` }] },
     config: { imageConfig: { aspectRatio } }
-  }), 2, 3000); // 2 retries, 3s initial delay for images
+  }), 2, 3000);
 
   for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
-    }
+    if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
   }
-  
-  throw new Error("No image data returned from API");
+  throw new Error("No image data");
 }
 
 function createWavHeader(dataLength: number, sampleRate: number): Uint8Array {
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
-  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(0, 0x52494646, false); 
   view.setUint32(4, 36 + dataLength, true); 
-  view.setUint32(8, 0x57415645, false); // "WAVE"
-  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(8, 0x57415645, false); 
+  view.setUint32(12, 0x666d7420, false); 
   view.setUint16(16, 16, true); 
   view.setUint16(20, 1, true); 
   view.setUint16(22, 1, true); 
@@ -179,41 +156,30 @@ function createWavHeader(dataLength: number, sampleRate: number): Uint8Array {
   view.setUint32(28, sampleRate * 2, true); 
   view.setUint16(32, 2, true); 
   view.setUint16(34, 16, true); 
-  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(36, 0x64617461, false); 
   view.setUint32(40, dataLength, true); 
   return new Uint8Array(header);
 }
 
 async function generateStudioAudio(script: string, config: StudioConfig): Promise<{ blob: Blob; url: string }> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = 'gemini-2.5-flash-preview-tts';
   const selectedVoice = VOICES.find(v => v.id === config.voiceId) || VOICES[0];
 
-  const ttsText = `Performance: ${config.tone}. Speed: ${config.speed}. Duration target: ${config.durationMinutes}m ${config.durationSeconds}s. Script: ${script}`;
+  const ttsText = `Performance: ${config.tone}. Speed: ${config.speed}. Script: ${script}`;
 
   let audioParams: any = {
     model,
     contents: [{ parts: [{ text: ttsText }] }],
     config: {
       responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: selectedVoice.geminiVoice }
+        }
+      }
     }
   };
-
-  if (config.contentType === ContentType.PODCAST) {
-    audioParams.config.speechConfig = {
-      multiSpeakerVoiceConfig: {
-        speakerVoiceConfigs: [
-          { speaker: 'Joe', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
-          { speaker: 'Jane', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
-        ]
-      }
-    };
-  } else {
-    audioParams.config.speechConfig = {
-      voiceConfig: {
-        prebuiltVoiceConfig: { voiceName: selectedVoice.geminiVoice }
-      }
-    };
-  }
 
   try {
     const response: GenerateContentResponse = await retry(() => ai.models.generateContent(audioParams));
@@ -222,19 +188,8 @@ async function generateStudioAudio(script: string, config: StudioConfig): Promis
       const binaryString = atob(base64Audio);
       const len = binaryString.length;
       const pcmData = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        pcmData[i] = binaryString.charCodeAt(i);
-      }
-
-      const volumeFactor = config.volume || 1.0;
-      if (volumeFactor !== 1.0) {
-        const dataInt16 = new Int16Array(pcmData.buffer);
-        for (let i = 0; i < dataInt16.length; i++) {
-          let scaled = dataInt16[i] * volumeFactor;
-          dataInt16[i] = Math.max(-32768, Math.min(32767, scaled));
-        }
-      }
-
+      for (let i = 0; i < len; i++) pcmData[i] = binaryString.charCodeAt(i);
+      
       const wavHeader = createWavHeader(pcmData.length, 24000);
       const combined = new Uint8Array(wavHeader.length + pcmData.length);
       combined.set(wavHeader);
